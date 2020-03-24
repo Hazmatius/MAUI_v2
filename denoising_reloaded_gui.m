@@ -22,7 +22,7 @@ function varargout = denoising_reloaded_gui(varargin)
 
 % Edit the above text to modify the response to help denoising_reloaded_gui
 
-% Last Modified by GUIDE v2.5 18-Mar-2020 13:52:32
+% Last Modified by GUIDE v2.5 24-Mar-2020 13:17:40
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -68,6 +68,7 @@ rootpath(end) = [];
 rootpath = strjoin(rootpath, filesep);
 pipeline_data.defaultPath = rootpath;
 pipeline_data.figures = struct();
+pipeline_data.figures.main_figure = hObject;
 pipeline_data.figures.raw_data_figure = figure('Name', 'Raw data', 'NumberTitle', 'off');
 pipeline_data.figures.denoised_data_figure = figure('Name', 'Denoised data', 'NumberTitle', 'off');
 pipeline_data.figures.noise_diff_figure = figure('Name', 'Difference', 'NumberTitle', 'off');
@@ -75,12 +76,11 @@ pipeline_data.figures.histogram_figure = figure('Name', 'KNN-distribution', 'Num
 pipeline_data.point_indices = [NaN, NaN];
 % Choose default command line output for denoising_reloaded_gui
 handles.output = hObject;
-
 % Update handles structure
 guidata(hObject, handles);
 
 % UIWAIT makes denoising_reloaded_gui wait for user response (see UIRESUME)
-% uiwait(handles.figure1);
+% uiwait(handles.main_figure);
 
 
 % --- Outputs from this function are returned to the command line.
@@ -132,7 +132,7 @@ function display_cap_slider_Callback(hObject, eventdata, handles)
         set(handles.display_cap_edit, 'string', num2str(val));
         channels = getSelectedChannels(handles);
         for i=1:numel(channels)
-            pipeline_data.points.display_caps(channels{i}) = displaycap;
+            pipeline_data.points.display_caps(channels{i}) = val;
         end
         plot_data(handles);
     catch err
@@ -269,15 +269,34 @@ function add_points_button_Callback(hObject, eventdata, handles)
 
 % --- Executes on button press in run_knn_button.
 function run_knn_button_Callback(hObject, eventdata, handles)
-% hObject    handle to run_knn_button (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-global pipeline_data;
-disp('running knn');
-pipeline_data.points.calc_knn();
-update_channel_status_icons(handles);
-update_point_status_icons(handles);
+    run_knn_calculation(handles)
 
+function run_knn_calculation(handles)
+    global pipeline_data;
+    points = getSelectedPoints(handles);
+    channels = getSelectedChannels(handles);
+    question = 'Do you really want to run the KNN calculation for ';
+    for i=1:numel(channels)
+        question = [question, channels{i}, ', '];
+    end
+    question = question(1:(end-2));
+    answer = questdlg(question, 'Yes', 'No');
+    if strcmp(answer, 'Yes')
+        wb = waitbar(0, 'Running KNN...');
+        total = numel(points)*numel(channels);
+        count = 1;
+        for i=1:numel(points)
+            for j=1:numel(channels)
+                wb = waitbar(count/total, wb, ['Running KNN for ', points{i}.name, ' on ', channels{j}, '...']);
+                points{i}.calc_knn_for_label(channels{j});
+                count = count + 1;
+            end
+        end
+        close(wb);
+        update_channel_status_icons(handles);
+        update_point_status_icons(handles);
+        plot_data(handles);
+    end
 
 function load_selected_data(handles)
     points = getSelectedPoints(handles);
@@ -409,9 +428,9 @@ function update_status_icons(handles)
     end
     set(handles.channel_table, 'data', channel_table_data);
 
-% --- Executes on key press with focus on figure1 and none of its controls.
-function figure1_KeyPressFcn(hObject, eventdata, handles)
-% hObject    handle to figure1 (see GCBO)
+% --- Executes on key press with focus on main_figure and none of its controls.
+function main_figure_KeyPressFcn(hObject, eventdata, handles)
+% hObject    handle to main_figure (see GCBO)
 % eventdata  structure with the following fields (see MATLAB.UI.FIGURE)
 %	Key: name of the key that was pressed, in lower case
 %	Character: character interpretation of the key(s) that was pressed
@@ -437,9 +456,12 @@ function point_table_KeyPressFcn(hObject, eventdata, handles)
         switch eventdata.Key
             case 's'
                 pipeline_data.points.set_point_stage_status(point_names, 1);
+                pipeline_data.points.manage_memory();
                 update_point_status_icons(handles);
+                run_knn_calculation(handles);
             case 'd'
                 pipeline_data.points.set_point_stage_status(point_names, 0);
+                pipeline_data.points.manage_memory();
                 update_point_status_icons(handles);
         end
     end
@@ -459,9 +481,12 @@ function channel_table_KeyPressFcn(hObject, eventdata, handles)
         switch eventdata.Key
             case 's'
                 pipeline_data.points.set_channel_stage_status(channels, 1);
+                pipeline_data.points.manage_memory();
                 update_channel_status_icons(handles);
+                run_knn_calculation(handles);
             case 'd'
                 pipeline_data.points.set_channel_stage_status(channels, 0);
+                pipeline_data.points.manage_memory();
                 update_channel_status_icons(handles);
         end
     end
@@ -482,39 +507,94 @@ function fix_table_selection(handles)
     channel_jUITable = channel_jUIScrollPane.getViewport.getView;
     channel_jUITable.changeSelection(channel_row-1,channel_col-1, false, false);
     
-function plot_images(point, channel)
+    
+function manage_figures(handles)
     global pipeline_data;
-    if ~isvalid(pipeline_data.figures.raw_data_figure)
-        pipeline_data.figures.raw_data_figure = figure('Name', 'Raw data', 'NumberTitle', 'off');
-    end
-    if ~isvalid(pipeline_data.figures.denoised_data_figure)
-        pipeline_data.figures.denoised_data_figure = figure('Name', 'Denoised data', 'NumberTitle', 'off');
-    end
-    if ~isvalid(pipeline_data.figures.noise_diff_figure)
-        pipeline_data.figures.noise_diff_figure = figure('Name', 'Difference', 'NumberTitle', 'off');
-    end
-    if ~isvalid(pipeline_data.figures.histogram_figure)
-        pipeline_data.figures.histogram_figure = figure('Name', 'KNN-distribution', 'NumberTitle', 'off');
+    [rootpath, name, ext] = fileparts(mfilename('fullpath'));
+    display_style = get_display_option(handles);
+    switch display_style
+        case 'contracted'
+            if ~isvalid(pipeline_data.figures.raw_data_figure)
+                pipeline_data.figures.raw_data_figure = figure('Name', 'Raw data', 'NumberTitle', 'off'); plotbrowser on;
+            end
+            if ~isvalid(pipeline_data.figures.denoised_data_figure)
+                pipeline_data.figures.denoised_data_figure = figure('Name', 'Denoised data', 'NumberTitle', 'off'); plotbrowser on;
+            end
+            if ~isvalid(pipeline_data.figures.noise_diff_figure)
+                pipeline_data.figures.noise_diff_figure = figure('Name', 'Difference', 'NumberTitle', 'off'); plotbrowser on;
+            end
+            if ~isvalid(pipeline_data.figures.histogram_figure)
+                pipeline_data.figures.histogram_figure = figure('Name', 'KNN-distribution', 'NumberTitle', 'off');
+            end
+            try
+                filetext = fileread([rootpath, filesep, 'src', filesep, 'layout.json']);
+                layout_struct = jsondecode(filetext);
+                set(pipeline_data.figures.main_figure, 'Position', layout_struct.contracted.main_figure_position);
+                set(pipeline_data.figures.histogram_figure, 'Position', layout_struct.contracted.histogram_figure_position);
+            catch
+                
+            end
+        case 'expanded'
+            if ~isvalid(pipeline_data.figures.raw_data_figure)
+                pipeline_data.figures.raw_data_figure = figure('Name', 'Raw data', 'NumberTitle', 'off');
+            end
+            if ~isvalid(pipeline_data.figures.denoised_data_figure)
+                pipeline_data.figures.denoised_data_figure = figure('Name', 'Denoised data', 'NumberTitle', 'off');
+            end
+            if ~isvalid(pipeline_data.figures.noise_diff_figure)
+                pipeline_data.figures.noise_diff_figure = figure('Name', 'Difference', 'NumberTitle', 'off');
+            end
+            if ~isvalid(pipeline_data.figures.histogram_figure)
+                pipeline_data.figures.histogram_figure = figure('Name', 'KNN-distribution', 'NumberTitle', 'off');
+            end
+            try
+                filetext = fileread([rootpath, filesep, 'src', filesep, 'layout.json']);
+                layout_struct = jsondecode(filetext);
+                figure_fields = fields(pipeline_data.figures);
+                for i=1:numel(figure_fields)
+                    fieldname = figure_fields{i};
+                    set(getfield(pipeline_data.figures, fieldname), 'Position', getfield(layout_struct.expanded, [fieldname, '_position']));
+                end
+            catch err
+                disp(err)
+            end
+        otherwise
+            if ~isvalid(pipeline_data.figures.raw_data_figure)
+                pipeline_data.figures.raw_data_figure = figure('Name', 'Raw data', 'NumberTitle', 'off');
+            end
+            if ~isvalid(pipeline_data.figures.denoised_data_figure)
+                pipeline_data.figures.denoised_data_figure = figure('Name', 'Denoised data', 'NumberTitle', 'off');
+            end
+            if ~isvalid(pipeline_data.figures.noise_diff_figure)
+                pipeline_data.figures.noise_diff_figure = figure('Name', 'Difference', 'NumberTitle', 'off');
+            end
+            if ~isvalid(pipeline_data.figures.histogram_figure)
+                pipeline_data.figures.histogram_figure = figure('Name', 'KNN-distribution', 'NumberTitle', 'off');
+            end
     end
     
+function plot_images(point, channel, handles)
+    global pipeline_data;
+    manage_figures(handles);
     try
         sfigure(pipeline_data.figures.raw_data_figure);
         raw_data = point.counts_dict(channel);
         colormap(parula);
-        imagesc(raw_data); axis off; title(['Raw ', channel, ' on ', strrep(point.name, '_', '\_')]);
+        imagesc(raw_data); axis off; title(['Raw ', channel, ' on ', strrep(point.name, '_', '\_')]); ax1 = gca;
         caxis([0, min(pipeline_data.points.display_caps(channel), max(raw_data(:)))]);
         
         try
             sfigure(pipeline_data.figures.denoised_data_figure);
             no_noise_data = point.get_no_noise_data(channel);
             colormap(parula);
-            imagesc(no_noise_data); axis off; title(['Denoised ', channel, ' on ', strrep(point.name, '_', '\_')]);
+            imagesc(no_noise_data); axis off; title(['Denoised ', channel, ' on ', strrep(point.name, '_', '\_')]); ax2 = gca;
             caxis([0, min(pipeline_data.points.display_caps(channel), max(raw_data(:)))]);
 
             sfigure(pipeline_data.figures.noise_diff_figure);
             diff_data = raw_data - no_noise_data;
             colormap(parula);
-            imagesc(diff_data); axis off; title(['Noise ', channel, ' on ', strrep(point.name, '_', '\_')]);
+            imagesc(diff_data); axis off; title(['Noise ', channel, ' on ', strrep(point.name, '_', '\_')]); ax3 = gca;
+            linkaxes([ax1, ax2, ax3]);
         catch
             sfigure(pipeline_data.figures.denoised_data_figure); clf;
             sfigure(pipeline_data.figures.noise_diff_figure); clf;
@@ -529,11 +609,12 @@ function plot_images(point, channel)
     
 function plot_data(handles)
     global pipeline_data;
+    manage_figures(handles);
     points = getSelectedPoints(handles);
     channels = getSelectedChannels(handles);
     if numel(channels)==1
         if numel(points)==1
-            plot_images(points{1}, channels{1});
+            plot_images(points{1}, channels{1}, handles);
             try
                 knn_hist = points{1}.get_knn_hist(channels{1});
                 sfigure(pipeline_data.figures.histogram_figure); clf;
@@ -558,7 +639,7 @@ function plot_data(handles)
                 end
                 hold off;
             catch err
-                % disp(err);
+                sfigure(pipeline_data.figures.histogram_figure); clf;
             end
         else
             sfigure(pipeline_data.figures.raw_data_figure); clf;
@@ -858,11 +939,17 @@ function opt_thresholds_button_Callback(hObject, eventdata, handles)
     answer = questdlg(question, 'Yes', 'No');
     switch answer
         case 'Yes'
-            for i=1:numel(points)
-                for j=1:numel(channels)
-                    points{i}.optimize_threshold(channels{j});
+            total = numel(points)*numel(channels);
+            count = 1;
+            wb = waitbar(0, 'Optimizing Thresholds...');
+            for i=1:numel(channels)
+                for j=1:numel(points)
+                    wb = waitbar(count/total, wb, ['Optimizing threshold for ', channels{i}, ' on ', points{j}.name, '...']);
+                    points{j}.optimize_threshold(channels{i});
+                    count = count + 1;
                 end
             end
+            close(wb);
     end
     
     update_channel_table(handles);
@@ -958,7 +1045,6 @@ function load_params_button_Callback(hObject, eventdata, handles)
         end
     end
     update_channel_table(handles);
-    
 
 function min_threshold_edit_Callback(hObject, eventdata, handles)
     set_min_threshold(handles, get(hObject, 'string'));
@@ -976,7 +1062,6 @@ function min_threshold_edit_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
-
 
 % --- Executes on button press in save_parameters_button.
 function save_parameters_button_Callback(hObject, eventdata, handles)
@@ -1013,3 +1098,75 @@ function fix_sliders(handles)
     elseif value>get(handles.display_cap_slider, 'max')
         set(handles.display_cap_slider, 'max', value);
     end
+
+function option = get_display_option(handles)
+    if get(handles.disp_opt_1, 'value')==1
+        option = 'expanded';
+    elseif get(handles.disp_opt_2, 'value')==1
+        option = 'contracted';
+    else
+        option = 'unknown';
+    end
+    
+% --- Executes on button press in disp_opt_1.
+function disp_opt_1_Callback(hObject, eventdata, handles)
+% hObject    handle to disp_opt_1 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+    global pipeline_data;
+    try close(pipeline_data.figures.raw_data_figure); catch; end
+    try close(pipeline_data.figures.denoised_data_figure); catch; end
+    try close(pipeline_data.figures.noise_diff_figure); catch; end
+    try close(pipeline_data.figures.histogram_figure); catch; end
+    plotbrowser off;
+    plot_data(handles);
+    figure(pipeline_data.figures.raw_data_figure);
+
+% --- Executes on button press in disp_opt_2.
+function disp_opt_2_Callback(hObject, eventdata, handles)
+% hObject    handle to disp_opt_2 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+    global pipeline_data;
+    try close(pipeline_data.figures.raw_data_figure); catch; end
+    try close(pipeline_data.figures.denoised_data_figure); catch; end
+    try close(pipeline_data.figures.noise_diff_figure); catch; end
+    try close(pipeline_data.figures.histogram_figure); catch; end
+    plotbrowser off;
+    plot_data(handles);
+    figure(pipeline_data.figures.raw_data_figure);
+
+% --- Executes on button press in save_layout_button.
+function save_layout_button_Callback(hObject, eventdata, handles)
+% hObject    handle to save_layout_button (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+    global pipeline_data;
+    [rootpath, name, ext] = fileparts(mfilename('fullpath'));
+    try
+        filetext = fileread([rootpath, filesep, 'src', filesep, 'layout.json']);
+        layout_struct = jsondecode(filetext);
+    catch
+        layout_struct = struct();
+    end
+
+    opt_struct = struct();
+    figure_fields = fields(pipeline_data.figures);
+    for i=1:numel(figure_fields)
+        fieldname = figure_fields{i};
+        opt_struct = setfield(opt_struct, [fieldname, '_position'], get(getfield(pipeline_data.figures, fieldname), 'Position'));
+    end
+    
+    display_option = get_display_option(handles);
+    switch display_option
+        case 'expanded'
+            layout_struct.expanded = opt_struct;
+        case 'contracted'
+            layout_struct.contracted = opt_struct;
+        otherwise
+            error('Invalid display style option selected');
+    end
+    filetext = jsonencode(layout_struct);
+    fid = fopen([rootpath, filesep, 'src', filesep, 'layout.json'], 'wt');
+    fprintf(fid, filetext);
+    fclose(fid);
