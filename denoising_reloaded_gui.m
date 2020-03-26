@@ -662,8 +662,13 @@ function plot_data(handles)
                 end
                 hold off;
                 legend(point_names{:});
+                legend boxoff;
             catch
-                
+                sfigure(pipeline_data.figures.histogram_figure);
+                ax = gca;
+                tx = text(1,1,'Unexpected Error');
+                set(ax,'visible','off','xlim',[0 2],'ylim',[0 2],'Position',[0 0 1 1]) ;
+                set(tx,'visible','on','HorizontalAlignment','center','VerticalAlignment','middle')
             end
         end
     end
