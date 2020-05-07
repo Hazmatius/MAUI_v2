@@ -177,15 +177,18 @@ function channels = getSelectedChannels(handles)
 function update_point_params(handles)
     try
         points = getSelectedPoints(handles);
+        channels = getSelectedChannels(handles);
         for j=1:numel(points)
             point = points{j};
             new_data = get(handles.channel_table, 'data');
             for i=1:numel(point.labels)
                 label = new_data{i,2};
-                k_value = new_data{i,3};
-                threshold = new_data{i,4};
-                min_threshold = new_data{i,5};
-                point.set_params(label, k_value, threshold, min_threshold);
+                if any(strcmp(label, channels))
+                    k_value = new_data{i,3};
+                    threshold = new_data{i,4};
+                    min_threshold = new_data{i,5};
+                    point.set_params(label, k_value, threshold, min_threshold);
+                end
             end
         end
     catch err
