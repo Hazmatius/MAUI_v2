@@ -6,9 +6,11 @@ classdef Point < handle
         name
         point_path
         path_ext
+        
         counts
         labels
         tags
+        
         runinfo
         % for denoising
         int_norm_d
